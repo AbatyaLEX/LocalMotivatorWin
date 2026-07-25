@@ -1,64 +1,56 @@
 package main
 
 import (
-	"context"
-	"fmt"
 	"log"
-	"os"
 	"time"
-	"google.golang.org/genai"
+
+	ai "github.com/AbatyaLEX/LocalMotivatorWin/ai"
+	ticker "github.com/AbatyaLEX/LocalMotivatorWin/ticker"
+	notification "github.com/AbatyaLEX/LocalMotivatorWin/windows"
 )
 
+const (
+	configPath = "config.json"
+	notTitle   = "Local Motivator"
+)
 
-func main(){
-
-	ctx, cancel := CreateContext()
-	defer cancel()
-	client := InitClient(ctx)
-	contents := []*genai.Content{
-		genai.NewContentFromText("Duck", genai.RoleUser),
-	}
-	response, err := client.Models.GenerateContent(ctx, "gemini-3.6-flash", contents, nil)
+func main() {
+	config, err := ai.LoadConfig(configPath)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(response.Text())
-	OwnTicker()
-}
 
-func OwnTicker(){
-	ticker  :=  time.NewTicker(1000 *  time.Millisecond)
-	done :=  make(chan struct{})
-	go  func()  {
-		for {
-			select{
-			case  <-done:
-				return
-			case  t :=  <-ticker.C:
-				fmt.Println("Tick at", t)
-			}
+	aiClient, err := ai.NewClient(config)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := notification.Start(); err != nil {
+		log.Fatal(err)
+	}
+	defer notification.Close()
+
+	period := time.Duration(
+		config.NotificationIntervalMinute,
+	) * time.Minute
+
+	action := func() {
+		message, err := aiClient.CreateRequest()
+		if err != nil {
+			log.Printf("failed to generate motivation: %v", err)
+			return
 		}
-	}()
 
-	time.Sleep(5000 * time.Millisecond)
-	ticker.Stop()
-	close(done)
-	fmt.Println("Stop")
-}
+		if err := notification.ShowNotification(
+			notTitle,
+			message,
+		); err != nil {
+			log.Printf("failed to show notification: %v", err)
+			return
+		}
 
-func CreateContext()(context.Context, context.CancelFunc){
-	baseCtx := context.Background()
-	ctx, cancel := context.WithTimeout(baseCtx, 10*time.Second)
-	return ctx, cancel
-}
-
-func  InitClient(ctx context.Context)*genai.Client{
-	client, err := genai.NewClient(ctx, &genai.ClientConfig{
-		APIKey: os.Getenv("Gemini_API_Key"),
-		Backend: genai.BackendGeminiAPI,
-	})
-	if err != nil {
-		log.Fatal(err)
+		log.Printf("motivation delivered: %s", message)
 	}
-	return client
+
+	ticker.Start(period, action)
 }

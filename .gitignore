@@ -1,0 +1,11 @@
+# Configuration
+config.json
+
+# Windows builds
+*.exe
+
+# Logs
+*.log
+
+# IDE
+.vscode/
